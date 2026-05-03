@@ -110,3 +110,18 @@ func TestMaxLength(t *testing.T) {
 		})
 	}
 }
+
+func TestIsValidPriority_UrgentIsInvalid(t *testing.T) {
+	if validator.IsValidPriority("urgent") {
+		t.Error("expected 'urgent' to be invalid priority, but it was accepted")
+	}
+}
+
+func TestIsValidPriority_ValidValues(t *testing.T) {
+	validPriorities := []string{"low", "medium", "high", "LOW", "HIGH", "Medium"}
+	for _, p := range validPriorities {
+		if !validator.IsValidPriority(p) {
+			t.Errorf("expected '%s' to be valid priority", p)
+		}
+	}
+}

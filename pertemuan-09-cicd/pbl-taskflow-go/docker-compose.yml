@@ -10,11 +10,14 @@ services:
       POSTGRES_DB:       taskflow
       POSTGRES_USER:     taskflow
       POSTGRES_PASSWORD: taskflow_secret
+      # Migration SQL dijalankan via POSTGRES_INITDB_ARGS tidak bisa,
+      # jadi kita gunakan script init via environment variable:
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d   # ← auto-run migrations
+      # NOTE: Volume mount ./migrations dihapus karena path mengandung spasi & titik dua.
+      # Migration akan dijalankan otomatis oleh aplikasi (lihat postgres.go Migrate()).
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U taskflow -d taskflow"]
       interval: 5s

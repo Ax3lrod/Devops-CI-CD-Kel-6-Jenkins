@@ -1,6 +1,8 @@
 package service_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/taskflow/api/internal/model"
@@ -17,10 +19,10 @@ func newSvc() *service.TaskService {
 
 func TestCalculateCompletionRate(t *testing.T) {
 	tests := []struct {
-		name    string
-		tasks   []model.Task
-		want    float64
-		isBug   bool
+		name  string
+		tasks []model.Task
+		want  float64
+		isBug bool
 	}{
 		{
 			name:  "tidak ada task",
@@ -79,6 +81,19 @@ func TestCalculateCompletionRate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCalculateCompletionRate_PartialCompletion(t *testing.T) {
+	tasks := []model.Task{
+		{ID: "1", Status: model.StatusDone},
+		{ID: "2", Status: model.StatusTodo},
+		{ID: "3", Status: model.StatusTodo},
+	}
+	// 1 dari 3 = 33.33...
+	rate := service.CalculateCompletionRate(tasks)
+	if rate < 33.0 || rate > 34.0 {
+		t.Errorf("expected ~33.33, got %v", rate)
 	}
 }
 
@@ -268,3 +283,296 @@ func TestRollbackStatusSimulation(t *testing.T) {
 // - TestGetStats_CompletionRate (setelah bug #1 diperbaiki)
 // - TestCreate_WithUnicodeTitle
 // - TestDelete_AndVerifyStats
+
+func TestGetAll(t *testing.T) {
+	svc := newSvc()
+
+	// Kosong dulu
+	tasks, err := svc.GetAll("") // GetAll butuh string filter
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("expected 0 tasks, got %d", len(tasks))
+	}
+
+	// Tambah 2 task
+	svc.Create(model.CreateTaskRequest{Title: "Task A"})
+	svc.Create(model.CreateTaskRequest{Title: "Task B"})
+
+	tasks, err = svc.GetAll("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 {
+		t.Errorf("expected 2 tasks, got %d", len(tasks))
+	}
+}
+
+func TestGetAll_WithStatusFilter(t *testing.T) {
+	svc := newSvc()
+
+	svc.Create(model.CreateTaskRequest{Title: "Todo Task"})
+	svc.Create(model.CreateTaskRequest{Title: "Done Task"})
+
+	// Kita perlu update salah satu jadi done secara manual karena Create selalu todo
+	tasks, _ := svc.GetAll("")
+	svc.Update(tasks[1].ID, model.UpdateTaskRequest{Status: ptr(model.StatusDone)})
+
+	t.Run("Filter done", func(t *testing.T) {
+		results, err := svc.GetAll("done")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 {
+			t.Errorf("expected 1 done task, got %d", len(results))
+		}
+	})
+
+	t.Run("Filter tidak valid", func(t *testing.T) {
+		_, err := svc.GetAll("invalid-status")
+		if err == nil {
+			t.Error("expected error for invalid status filter, got nil")
+		}
+	})
+}
+
+func TestUpdate_PartialFields(t *testing.T) {
+	svc := newSvc()
+	task, _ := svc.Create(model.CreateTaskRequest{Title: "Old Title", Description: "Old Desc"})
+
+	t.Run("Update Title Only", func(t *testing.T) {
+		newTitle := "New Title"
+		updated, _ := svc.Update(task.ID, model.UpdateTaskRequest{Title: &newTitle})
+		if updated.Title != newTitle {
+			t.Errorf("title not updated: got %q", updated.Title)
+		}
+		if updated.Description != "Old Desc" {
+			t.Error("description should not change")
+		}
+	})
+
+	t.Run("Update Description Only", func(t *testing.T) {
+		newDesc := "New Description"
+		updated, _ := svc.Update(task.ID, model.UpdateTaskRequest{Description: &newDesc})
+		if updated.Description != newDesc {
+			t.Errorf("description not updated: got %q", updated.Description)
+		}
+	})
+}
+
+func ptr[T any](v T) *T {
+	return &v
+}
+
+// ── Mock Repository untuk Error Path Testing ─────────────────────────────────
+
+type errorRepo struct {
+	base       *repository.MemoryRepository
+	saveErr    error
+	findErr    error
+	deleteErr  error
+	findAllErr error
+}
+
+func (r *errorRepo) Save(t model.Task) error {
+	if r.saveErr != nil {
+		return r.saveErr
+	}
+	return r.base.Save(t)
+}
+
+func (r *errorRepo) FindByID(id string) (model.Task, bool, error) {
+	if r.findErr != nil {
+		return model.Task{}, false, r.findErr
+	}
+	return r.base.FindByID(id)
+}
+
+func (r *errorRepo) FindAll() ([]model.Task, error) {
+	if r.findAllErr != nil {
+		return nil, r.findAllErr
+	}
+	return r.base.FindAll()
+}
+
+func (r *errorRepo) FindByStatus(s model.Status) ([]model.Task, error) {
+	if r.findAllErr != nil {
+		return nil, r.findAllErr
+	}
+	return r.base.FindByStatus(s)
+}
+
+func (r *errorRepo) Delete(id string) (bool, error) {
+	if r.deleteErr != nil {
+		return false, r.deleteErr
+	}
+	return r.base.Delete(id)
+}
+
+func (r *errorRepo) Count() (int, error) {
+	return r.base.Count()
+}
+
+func (r *errorRepo) Close() error {
+	return r.base.Close()
+}
+
+// ── Error Path Tests ─────────────────────────────────────────────────────────
+
+func TestCreate_TitleTooLong(t *testing.T) {
+	svc := newSvc()
+	longTitle := strings.Repeat("a", 201)
+	_, err := svc.Create(model.CreateTaskRequest{Title: longTitle})
+	if err == nil {
+		t.Error("expected error for title > 200 chars")
+	}
+}
+
+func TestCreate_InvalidPriority(t *testing.T) {
+	svc := newSvc()
+	_, err := svc.Create(model.CreateTaskRequest{Title: "Test", Priority: "urgent"})
+	if err == nil {
+		t.Error("expected error for invalid priority 'urgent'")
+	}
+}
+
+func TestCreate_SaveError(t *testing.T) {
+	repo := &errorRepo{
+		base:    repository.NewMemoryRepository(),
+		saveErr: fmt.Errorf("database down"),
+	}
+	svc := service.NewTaskService(repo)
+	_, err := svc.Create(model.CreateTaskRequest{Title: "Test"})
+	if err == nil {
+		t.Error("expected error when save fails")
+	}
+}
+
+func TestGetByID_DatabaseError(t *testing.T) {
+	repo := &errorRepo{
+		base:    repository.NewMemoryRepository(),
+		findErr: fmt.Errorf("connection refused"),
+	}
+	svc := service.NewTaskService(repo)
+	_, err := svc.GetByID("any-id")
+	if err == nil {
+		t.Error("expected error on database failure")
+	}
+}
+
+func TestDelete_NotFoundService(t *testing.T) {
+	svc := newSvc()
+	_, err := svc.Delete("non-existent")
+	if err == nil {
+		t.Error("expected error for deleting non-existent task")
+	}
+}
+
+func TestDelete_DatabaseError(t *testing.T) {
+	repo := &errorRepo{
+		base:    repository.NewMemoryRepository(),
+		findErr: fmt.Errorf("connection refused"),
+	}
+	svc := service.NewTaskService(repo)
+	_, err := svc.Delete("any-id")
+	if err == nil {
+		t.Error("expected error on database failure")
+	}
+}
+
+func TestDelete_RepoDeleteError(t *testing.T) {
+	repo := &errorRepo{
+		base:      repository.NewMemoryRepository(),
+		deleteErr: fmt.Errorf("delete failed"),
+	}
+	svc := service.NewTaskService(repo)
+	// Simpan task dulu supaya FindByID berhasil
+	repo.base.Save(model.Task{ID: "1", Title: "Test", Status: model.StatusTodo, Priority: "medium"})
+	_, err := svc.Delete("1")
+	if err == nil {
+		t.Error("expected error when repo.Delete fails")
+	}
+}
+
+func TestUpdate_DatabaseError(t *testing.T) {
+	repo := &errorRepo{
+		base:    repository.NewMemoryRepository(),
+		findErr: fmt.Errorf("connection refused"),
+	}
+	svc := service.NewTaskService(repo)
+	newTitle := "New"
+	_, err := svc.Update("any-id", model.UpdateTaskRequest{Title: &newTitle})
+	if err == nil {
+		t.Error("expected error on database failure")
+	}
+}
+
+func TestUpdate_SaveError(t *testing.T) {
+	repo := &errorRepo{
+		base:    repository.NewMemoryRepository(),
+		saveErr: fmt.Errorf("save failed"),
+	}
+	svc := service.NewTaskService(repo)
+	// Simpan langsung ke base (bypass mock saveErr)
+	repo.base.Save(model.Task{ID: "1", Title: "Old", Status: model.StatusTodo, Priority: "medium"})
+	newTitle := "New Title"
+	_, err := svc.Update("1", model.UpdateTaskRequest{Title: &newTitle})
+	if err == nil {
+		t.Error("expected error when save fails during update")
+	}
+}
+
+func TestUpdate_EmptyTitle(t *testing.T) {
+	svc := newSvc()
+	task, _ := svc.Create(model.CreateTaskRequest{Title: "Original"})
+	emptyTitle := ""
+	_, err := svc.Update(task.ID, model.UpdateTaskRequest{Title: &emptyTitle})
+	if err == nil {
+		t.Error("expected error for empty title update")
+	}
+}
+
+func TestUpdate_InvalidStatus(t *testing.T) {
+	svc := newSvc()
+	task, _ := svc.Create(model.CreateTaskRequest{Title: "Test"})
+	_, err := svc.Update(task.ID, model.UpdateTaskRequest{Status: ptr(model.Status("invalid"))})
+	if err == nil {
+		t.Error("expected error for invalid status")
+	}
+}
+
+func TestGetStats_DatabaseError(t *testing.T) {
+	repo := &errorRepo{
+		base:       repository.NewMemoryRepository(),
+		findAllErr: fmt.Errorf("connection refused"),
+	}
+	svc := service.NewTaskService(repo)
+	_, err := svc.GetStats()
+	if err == nil {
+		t.Error("expected error on database failure")
+	}
+}
+
+func TestDelete(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	svc := service.NewTaskService(repo)
+
+	// Buat task dulu
+	created, _ := svc.Create(model.CreateTaskRequest{Title: "Hapus ini"})
+
+	// Delete yang ada — harus return task + nil error
+	deletedTask, err := svc.Delete(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deletedTask.ID != created.ID {
+		t.Errorf("expected deleted task ID %s, got %s", created.ID, deletedTask.ID)
+	}
+
+	// Delete yang tidak ada — harus return error
+	_, err = svc.Delete("tidak-ada")
+	if err == nil {
+		t.Error("expected error for non-existent task")
+	}
+}
