@@ -160,3 +160,125 @@ func TestConcurrentSave(t *testing.T) {
 // - TestSave_UpdateExisting: simpan task dengan ID sama → cek data terupdate
 // - TestCount_AfterDelete: Count akurat setelah serangkaian save + delete
 // - TestFindByStatus_InProgress: filter in_progress (setelah Bug #2 diperbaiki)
+
+func TestCount(t *testing.T) {
+	r := newRepo(t)
+
+	count, err := r.Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+
+	r.Save(model.Task{ID: "1", Title: "Task 1", Status: model.StatusTodo, Priority: "medium"})
+	r.Save(model.Task{ID: "2", Title: "Task 2", Status: model.StatusDone, Priority: "high"})
+
+	count, err = r.Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2, got %d", count)
+	}
+}
+
+func TestClear(t *testing.T) {
+	r := newRepo(t)
+	r.Save(model.Task{ID: "1", Title: "Task 1", Status: model.StatusTodo, Priority: "medium"})
+
+	r.Clear()
+
+	all, _ := r.FindAll()
+	if len(all) != 0 {
+		t.Errorf("expected empty after Clear(), got %d items", len(all))
+	}
+}
+
+func TestString(t *testing.T) {
+	r := newRepo(t)
+	r.Save(model.Task{ID: "1", Title: "Task A", Status: model.StatusTodo, Priority: "low"})
+
+	s := r.String()
+	if s == "" {
+		t.Error("expected non-empty String() output")
+	}
+}
+
+func TestClose(t *testing.T) {
+	r := newRepo(t)
+	if err := r.Close(); err != nil {
+		t.Errorf("Close() should return nil, got %v", err)
+	}
+}
+
+func TestFindByID_NotFound(t *testing.T) {
+	r := newRepo(t)
+	_, found, err := r.FindByID("tidak-ada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Error("expected not found, got found")
+	}
+}
+
+func TestDelete_NotFound(t *testing.T) {
+	r := newRepo(t)
+	deleted, err := r.Delete("tidak-ada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted {
+		t.Error("expected false for non-existent delete")
+	}
+}
+
+func TestSave_UpdateExisting(t *testing.T) {
+	r := newRepo(t)
+	r.Save(model.Task{ID: "1", Title: "Original", Status: model.StatusTodo, Priority: "low"})
+	r.Save(model.Task{ID: "1", Title: "Updated", Status: model.StatusDone, Priority: "high"})
+
+	task, found, _ := r.FindByID("1")
+	if !found {
+		t.Fatal("task not found")
+	}
+	if task.Title != "Updated" {
+		t.Errorf("expected 'Updated', got '%s'", task.Title)
+	}
+}
+
+func TestCount_AfterDelete(t *testing.T) {
+	r := newRepo(t)
+	r.Save(model.Task{ID: "1", Title: "Task 1", Status: model.StatusTodo, Priority: "low"})
+	r.Save(model.Task{ID: "2", Title: "Task 2", Status: model.StatusTodo, Priority: "low"})
+
+	r.Delete("1")
+
+	count, _ := r.Count()
+	if count != 1 {
+		t.Errorf("expected 1 after delete, got %d", count)
+	}
+}
+
+func TestFindByStatus_InProgress(t *testing.T) {
+	r := newRepo(t)
+	r.Save(model.Task{ID: "1", Title: "Task A", Status: model.StatusInProgress, Priority: "medium"})
+	r.Save(model.Task{ID: "2", Title: "Task B", Status: model.StatusTodo, Priority: "low"})
+
+	results, _ := r.FindByStatus(model.StatusInProgress)
+	if len(results) != 1 {
+		t.Errorf("expected 1 in_progress task, got %d", len(results))
+	}
+	if results[0].ID != "1" {
+		t.Errorf("expected task ID '1', got '%s'", results[0].ID)
+	}
+}
+
+func TestNewTaskRepository(t *testing.T) {
+	repo := repository.NewTaskRepository()
+	if repo == nil {
+		t.Error("expected repository instance, got nil")
+	}
+}

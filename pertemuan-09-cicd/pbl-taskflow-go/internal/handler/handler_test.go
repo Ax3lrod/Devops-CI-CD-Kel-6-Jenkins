@@ -3,6 +3,7 @@ package handler_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -356,8 +357,198 @@ func contains(s, substr string) bool {
 }
 
 // ── [TODO] Wajib Ditambah Mahasiswa ─────────────────────────────────────────
-// TODO: Tambahkan minimal 2 test baru:
-// - TestListTasks_WithStatusFilter (GET /api/v1/tasks?status=done)
-// - TestUpdateTask_TitleOnly (update hanya title tanpa ubah status)
-// - TestStats_ConsistencyWithTaskList (total di /stats == total di /tasks)
-// - TestCreateMultipleTasks_UniqueIDs (50 task, semua ID unik)
+
+func TestListTasks_WithStatusFilter(t *testing.T) {
+	srv := newServer(t)
+	defer srv.Close()
+
+	// 1. Buat 2 task (keduanya akan jadi 'todo' secara default)
+	doRequest(t, srv, http.MethodPost, "/api/v1/tasks", map[string]string{"title": "Task 1"})
+	resp2 := doRequest(t, srv, http.MethodPost, "/api/v1/tasks", map[string]string{"title": "Task 2"})
+	
+	var task2 model.Task
+	decodeBody(t, resp2, &task2)
+
+	// 2. Update task 2 menjadi 'done' lewat PUT
+	doRequest(t, srv, http.MethodPut, "/api/v1/tasks/"+task2.ID, map[string]string{"status": "done"})
+
+	// 3. Filter status=done
+	resp := doRequest(t, srv, http.MethodGet, "/api/v1/tasks?status=done", nil)
+	var body model.TaskListResponse
+	decodeBody(t, resp, &body)
+
+	if len(body.Tasks) != 1 {
+		t.Fatalf("expected 1 task with status=done, got %d", len(body.Tasks))
+	}
+	if body.Tasks[0].Status != model.StatusDone {
+		t.Errorf("expected status done, got %s", body.Tasks[0].Status)
+	}
+
+	// 4. Filter status tidak valid
+	respErr := doRequest(t, srv, http.MethodGet, "/api/v1/tasks?status=invalid", nil)
+	if respErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid status filter, got %d", respErr.StatusCode)
+	}
+}
+
+func TestUpdateTask_EdgeCases(t *testing.T) {
+	srv := newServer(t)
+	defer srv.Close()
+
+	// Buat satu task dulu
+	resp := doRequest(t, srv, http.MethodPost, "/api/v1/tasks", map[string]string{"title": "Initial"})
+	var task model.Task
+	decodeBody(t, resp, &task)
+
+	t.Run("Update hanya title", func(t *testing.T) {
+		newTitle := "Only Title Updated"
+		upResp := doRequest(t, srv, http.MethodPut, "/api/v1/tasks/"+task.ID, map[string]interface{}{
+			"title": newTitle,
+		})
+		if upResp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", upResp.StatusCode)
+		}
+		var updated model.Task
+		decodeBody(t, upResp, &updated)
+		if updated.Title != newTitle {
+			t.Errorf("expected title %q, got %q", newTitle, updated.Title)
+		}
+	})
+
+	t.Run("Update dengan JSON rusak", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/v1/tasks/"+task.ID, bytes.NewBufferString("{invalid-json"))
+		resp, _ := http.DefaultClient.Do(req)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400 for bad JSON, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Update task tidak ada", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodPut, "/api/v1/tasks/non-existent", map[string]string{"title": "New"})
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Update status tidak valid", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodPut, "/api/v1/tasks/"+task.ID, map[string]string{"status": "ghost"})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400 for invalid status, got %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestStats_ConsistencyWithTaskList(t *testing.T) {
+	srv := newServer(t)
+	defer srv.Close()
+
+	// 1. Tambahkan beberapa task
+	doRequest(t, srv, http.MethodPost, "/api/v1/tasks", map[string]string{"title": "T1"})
+	doRequest(t, srv, http.MethodPost, "/api/v1/tasks", map[string]string{"title": "T2"})
+
+	// 2. Ambil List
+	listResp := doRequest(t, srv, http.MethodGet, "/api/v1/tasks", nil)
+	var body model.TaskListResponse
+	decodeBody(t, listResp, &body)
+
+	// 3. Ambil Stats
+	statsResp := doRequest(t, srv, http.MethodGet, "/api/v1/stats", nil)
+	var stats model.StatsResponse
+	decodeBody(t, statsResp, &stats)
+
+	if stats.Total != len(body.Tasks) {
+		t.Errorf("stats.Total (%d) != len(tasks) (%d)", stats.Total, len(body.Tasks))
+	}
+}
+
+// ── Error Mock Repository ────────────────────────────────────────────────────
+
+type errorMockRepo struct {
+	repository.TaskRepository
+}
+
+func (m *errorMockRepo) Save(task model.Task) error { return errors.New("db error") }
+func (m *errorMockRepo) FindByID(id string) (model.Task, bool, error) { return model.Task{}, false, errors.New("db error") }
+func (m *errorMockRepo) FindAll() ([]model.Task, error) { return nil, errors.New("db error") }
+func (m *errorMockRepo) FindByStatus(status model.Status) ([]model.Task, error) { return nil, errors.New("db error") }
+func (m *errorMockRepo) Delete(id string) (bool, error) { return false, errors.New("db error") }
+func (m *errorMockRepo) Count() (int, error) { return 0, errors.New("db error") }
+func (m *errorMockRepo) Close() error { return nil }
+func (m *errorMockRepo) Clear() error { return nil }
+
+type emptyMockRepo struct {
+	repository.TaskRepository
+}
+
+func (m *emptyMockRepo) FindAll() ([]model.Task, error) { return nil, nil }
+func (m *emptyMockRepo) FindByStatus(status model.Status) ([]model.Task, error) { return nil, nil }
+func (m *emptyMockRepo) Close() error { return nil }
+func (m *emptyMockRepo) Clear() error { return nil }
+func (m *emptyMockRepo) Count() (int, error) { return 0, nil }
+
+func TestHandler_ErrorPaths(t *testing.T) {
+	svc := service.NewTaskService(&errorMockRepo{})
+	h := handler.New(svc)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	t.Run("GetStats Error", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodGet, "/api/v1/stats", nil)
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("expected 500, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("ListTasks Error", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodGet, "/api/v1/tasks", nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("CreateTask Error", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodPost, "/api/v1/tasks", map[string]string{"title": "Test"})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("GetTask Error", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodGet, "/api/v1/tasks/123", nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("UpdateTask Error", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodPut, "/api/v1/tasks/123", map[string]string{"title": "Test"})
+		if resp.StatusCode != http.StatusBadRequest { // DB error is bad request for now
+			t.Errorf("expected 400, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("DeleteTask Error", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodDelete, "/api/v1/tasks/123", nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestHandler_EmptyPaths(t *testing.T) {
+	svc := service.NewTaskService(&emptyMockRepo{})
+	h := handler.New(svc)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	t.Run("ListTasks Nil", func(t *testing.T) {
+		resp := doRequest(t, srv, http.MethodGet, "/api/v1/tasks", nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+	})
+}

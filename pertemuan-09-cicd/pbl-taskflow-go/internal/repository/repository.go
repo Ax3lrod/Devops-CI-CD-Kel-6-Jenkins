@@ -16,3 +16,8 @@ type TaskRepository interface {
 	Count() (int, error)
 	Close() error
 }
+
+// NewTaskRepository membuat repository default (in-memory) untuk testing dan development.
+func NewTaskRepository() TaskRepository {
+	return NewMemoryRepository()
+}
