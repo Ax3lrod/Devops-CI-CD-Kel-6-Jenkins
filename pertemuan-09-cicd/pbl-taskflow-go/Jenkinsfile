@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+    
+    tools {
+        go 'go1.22'
+    }
+
+    environment {
+        // Path disesuaikan dengan folder tugas
+        PROJECT_DIR = 'pertemuan-09-cicd/pbl-taskflow-go'
+        DATABASE_URL = "postgres://taskflow:taskflow_secret@localhost:5432/taskflow?sslmode=disable"
+    }
+
+    stages {
+        stage('Preparation') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    sh 'go mod download'
+                }
+            }
+        }
+
+        stage('Static Analysis') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    echo 'Running go vet...'
+                    sh 'go vet ./...'
+                }
+            }
+        }
+
+        stage('Unit Testing') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    echo 'Running tests with race detector...'
+                    sh 'go test -v -race ./internal/service/... ./internal/validator/... ./internal/handler/...'
+                }
+            }
+        }
+
+        stage('Coverage Gate') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    script {
+                        sh 'go test ./... -coverprofile=cov.out'
+                        // Mengambil angka total coverage dan membandingkannya
+                        def coverage = sh(script: "go tool cover -func=cov.out | grep total | awk '{print \$3}' | sed 's/%//'", returnStdout: true).trim()
+                        echo "Total project coverage: ${coverage}%"
+                        
+                        float covFloat = coverage.toFloat()
+                        if (covFloat < 75.0) {
+                            error "❌ Pipeline Failed: Coverage (${coverage}%) is below the 75% threshold!"
+                        } else {
+                            echo "✅ Coverage Gate Passed!"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build Binary') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    echo 'Compiling application...'
+                    sh 'go build -o bin/taskflow-api ./cmd/server'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            dir("${env.PROJECT_DIR}") {
+                echo 'Archiving test results...'
+                archiveArtifacts artifacts: 'cov.out', fingerprint: true
+            }
+        }
+        success {
+            echo '✅ CI Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ CI Pipeline failed. Check the logs for details.'
+        }
+    }
+}
