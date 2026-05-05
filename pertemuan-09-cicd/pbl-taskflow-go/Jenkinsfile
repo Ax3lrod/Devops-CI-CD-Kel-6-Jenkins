@@ -1,5 +1,11 @@
 pipeline {
-    agent any
+    agent {
+        docker { 
+            image 'golang:1.22'
+            // Mount socket dan gunakan network host
+            args '-u root -v /var/run/docker.sock:/var/run/docker.sock --network host'
+        }
+    }
     
     environment {
         PROJECT_DIR = 'pertemuan-09-cicd/pbl-taskflow-go'
@@ -8,54 +14,64 @@ pipeline {
     }
 
     stages {
-        stage('CI Pipeline (Vet, Test, Coverage)') {
-            agent {
-                docker { 
-                    image 'golang:1.22'
-                    // Mount socket dan gunakan network host agar bisa akses postgres
-                    args '-u root -v /var/run/docker.sock:/var/run/docker.sock --network host'
+        stage('Initialize') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    echo '🔧 Installing Dependencies (One-time)...'
+                    // Instalasi Docker CLI hanya di awal
+                    sh 'apt-get update && apt-get install -y docker.io'
+                    sh 'go mod download'
                 }
             }
+        }
+
+        stage('Static Analysis (Vet)') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    sh 'go vet ./...'
+                }
+            }
+        }
+
+        stage('Database Start') {
+            steps {
+                echo '🚀 Starting PostgreSQL Sidecar...'
+                sh "docker rm -f db-container || true"
+                sh "docker run -d --name db-container -p 5432:5432 -e POSTGRES_DB=taskflow -e POSTGRES_USER=taskflow -e POSTGRES_PASSWORD=taskflow_secret postgres:16"
+                sh 'sleep 15'
+            }
+        }
+
+        stage('Unit & Integration Tests') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    // Gunakan -buildvcs=false untuk fix error 128
+                    sh "CGO_ENABLED=1 DATABASE_URL='${env.DATABASE_URL}' go test -v -race -tags=integration -buildvcs=false ./..."
+                }
+            }
+        }
+
+        stage('Coverage Check') {
             steps {
                 dir("${env.PROJECT_DIR}") {
                     script {
-                        echo '🔧 Installing Docker CLI inside Agent...'
-                        // Install docker client di dalam container agar pasti compatible dan punya permission
-                        sh 'apt-get update && apt-get install -y docker.io'
-
-                        echo '🚀 Starting PostgreSQL Sidecar...'
-                        // Pastikan db-container lama dihapus jika ada
-                        sh "docker rm -f db-container || true"
-                        sh "docker run -d --name db-container -p 5432:5432 -e POSTGRES_DB=taskflow -e POSTGRES_USER=taskflow -e POSTGRES_PASSWORD=taskflow_secret postgres:16"
-                        
-                        try {
-                            echo '⏳ Waiting for Database to be ready...'
-                            sh 'sleep 15'
-                            
-                            echo '🔍 Running Static Analysis (Vet)...'
-                            sh 'go vet ./...'
-                            
-                            echo '🧪 Running Unit & Integration Tests...'
-                            sh "CGO_ENABLED=1 DATABASE_URL='${env.DATABASE_URL}' go test -v -race -tags=integration -coverprofile=cov.out ./..."
-                            
-                            echo '📊 Checking Coverage Gate...'
-                            def coverage = sh(script: "go tool cover -func=cov.out | grep total | awk '{print \$3}' | sed 's/%//'", returnStdout: true).trim()
-                            echo "Total Project Coverage: ${coverage}%"
-                            
-                            if (coverage.toFloat() < 75.0) {
-                                error "❌ FAILED: Coverage (${coverage}%) is still below 75%!"
-                            } else {
-                                echo "✅ SUCCESS: Coverage Gate Passed!"
-                            }
-
-                            echo '🏗️ Compiling Binary...'
-                            sh 'go build -o bin/taskflow-api ./cmd/server'
-                            
-                        } finally {
-                            echo '🧹 Cleaning up Database container...'
-                            sh "docker rm -f db-container || true"
+                        sh 'go test ./... -coverprofile=cov.out -buildvcs=false'
+                        def coverage = sh(script: "go tool cover -func=cov.out | grep total | awk '{print \$3}' | sed 's/%//'", returnStdout: true).trim()
+                        echo "Total Project Coverage: ${coverage}%"
+                        if (coverage.toFloat() < 75.0) {
+                            error "❌ Coverage Gate Failed: ${coverage}%"
                         }
                     }
+                }
+            }
+        }
+
+        stage('Build Artifact') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    // Fix exit status 128 dengan -buildvcs=false
+                    sh 'go build -buildvcs=false -o bin/taskflow-api ./cmd/server'
+                    echo "✅ Application Compiled Successfully!"
                 }
             }
         }
@@ -63,6 +79,8 @@ pipeline {
 
     post {
         always {
+            echo '🧹 Cleaning up resources...'
+            sh "docker rm -f db-container || true"
             dir("${env.PROJECT_DIR}") {
                 archiveArtifacts artifacts: 'cov.out', allowEmptyArchive: true
             }
