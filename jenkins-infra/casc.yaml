@@ -4,20 +4,10 @@ jenkins:
       allowsSignup: false
       users:
        - id: "admin"
-         password: "admin" # PASSWORD OTOMATIS
+         password: "admin"
   authorizationStrategy:
     fullControlOnceLoggedIn:
       allowAnonymousRead: false
-
-tool:
-  go:
-    installations:
-    - name: "go1.22"
-      properties:
-      - installSource:
-          installers:
-          - "goInstaller":
-              version: "1.22.12"
 
 unclassified:
   location:
