@@ -5,16 +5,15 @@ USER root
 RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
 
 USER jenkins
-# Tambahkan plugin-plugin pendukung agar dependensi ter-resolve dengan baik
+# Perbaikan ID Plugin (Go -> golang) agar tidak error 404
 RUN jenkins-plugin-cli --plugins \
     "configuration-as-code" \
-    "go" \
+    "golang" \
     "docker-workflow" \
     "docker-plugin" \
     "git" \
     "matrix-auth" \
     "workflow-aggregator" \
-    "struct-relational-beans" \
     "token-macro"
 
 # Environment variable untuk skip setup wizard
