@@ -4,7 +4,6 @@ pipeline {
     environment {
         PROJECT_DIR = 'pertemuan-09-cicd/pbl-taskflow-go'
         GOCACHE = "${WORKSPACE}/.cache"
-        // Database URL diarahkan ke localhost karena kita akan menggunakan network host
         DATABASE_URL = "postgres://taskflow:taskflow_secret@localhost:5432/taskflow?sslmode=disable"
     }
 
@@ -13,26 +12,30 @@ pipeline {
             agent {
                 docker { 
                     image 'golang:1.22'
-                    // Mount docker socket DAN binary docker agar agent bisa jalanin perintah docker
-                    args '-u root -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker --network host'
+                    // Mount socket dan gunakan network host agar bisa akses postgres
+                    args '-u root -v /var/run/docker.sock:/var/run/docker.sock --network host'
                 }
             }
             steps {
                 dir("${env.PROJECT_DIR}") {
                     script {
+                        echo '🔧 Installing Docker CLI inside Agent...'
+                        // Install docker client di dalam container agar pasti compatible dan punya permission
+                        sh 'apt-get update && apt-get install -y docker.io'
+
                         echo '🚀 Starting PostgreSQL Sidecar...'
-                        // Jalankan container postgres
+                        // Pastikan db-container lama dihapus jika ada
+                        sh "docker rm -f db-container || true"
                         sh "docker run -d --name db-container -p 5432:5432 -e POSTGRES_DB=taskflow -e POSTGRES_USER=taskflow -e POSTGRES_PASSWORD=taskflow_secret postgres:16"
                         
                         try {
                             echo '⏳ Waiting for Database to be ready...'
-                            sh 'sleep 15' // Menunggu postgres startup
+                            sh 'sleep 15'
                             
                             echo '🔍 Running Static Analysis (Vet)...'
                             sh 'go vet ./...'
                             
                             echo '🧪 Running Unit & Integration Tests...'
-                            // Jalankan test dengan -tags=integration agar postgres.go ikut terhitung
                             sh "CGO_ENABLED=1 DATABASE_URL='${env.DATABASE_URL}' go test -v -race -tags=integration -coverprofile=cov.out ./..."
                             
                             echo '📊 Checking Coverage Gate...'
