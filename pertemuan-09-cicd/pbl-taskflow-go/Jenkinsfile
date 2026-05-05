@@ -5,12 +5,18 @@ pipeline {
         PROJECT_DIR = 'pertemuan-09-cicd/pbl-taskflow-go'
         // DATABASE_URL disiapkan untuk S2 Integration Test nanti
         DATABASE_URL = "postgres://taskflow:taskflow_secret@db:5432/taskflow?sslmode=disable"
+        // PINDAHKAN CACHE KE WORKSPACE AGAR TIDAK PERMISSION DENIED
+        GOCACHE = "${WORKSPACE}/.cache"
     }
 
     stages {
         stage('Preparation') {
             agent {
-                docker { image 'golang:1.22' }
+                docker { 
+                    image 'golang:1.22'
+                    // Jalankan sebagai root agar tidak kena permission denied saat membuat cache
+                    args '-u root'
+                }
             }
             steps {
                 dir("${env.PROJECT_DIR}") {
@@ -21,7 +27,10 @@ pipeline {
 
         stage('Static Analysis') {
             agent {
-                docker { image 'golang:1.22' }
+                docker { 
+                    image 'golang:1.22'
+                    args '-u root'
+                }
             }
             steps {
                 dir("${env.PROJECT_DIR}") {
@@ -34,13 +43,13 @@ pipeline {
         stage('Unit Testing & Race Detector') {
             agent {
                 docker { 
-                    image 'golang:1.22' 
+                    image 'golang:1.22'
+                    args '-u root'
                 }
             }
             steps {
                 dir("${env.PROJECT_DIR}") {
                     echo 'Running tests with race detector (CGO Enabled)...'
-                    // Container golang defaultnya sudah punya gcc untuk -race
                     sh 'CGO_ENABLED=1 go test -v -race ./internal/service/... ./internal/validator/... ./internal/handler/...'
                 }
             }
@@ -48,7 +57,10 @@ pipeline {
 
         stage('Coverage Gate') {
             agent {
-                docker { image 'golang:1.22' }
+                docker { 
+                    image 'golang:1.22'
+                    args '-u root'
+                }
             }
             steps {
                 dir("${env.PROJECT_DIR}") {
@@ -69,7 +81,10 @@ pipeline {
 
         stage('Build Binary') {
             agent {
-                docker { image 'golang:1.22' }
+                docker { 
+                    image 'golang:1.22'
+                    args '-u root'
+                }
             }
             steps {
                 dir("${env.PROJECT_DIR}") {
