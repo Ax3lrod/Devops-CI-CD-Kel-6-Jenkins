@@ -3,93 +3,57 @@ pipeline {
     
     environment {
         PROJECT_DIR = 'pertemuan-09-cicd/pbl-taskflow-go'
-        // DATABASE_URL disiapkan untuk S2 Integration Test nanti
-        DATABASE_URL = "postgres://taskflow:taskflow_secret@db:5432/taskflow?sslmode=disable"
-        // PINDAHKAN CACHE KE WORKSPACE AGAR TIDAK PERMISSION DENIED
         GOCACHE = "${WORKSPACE}/.cache"
+        // Database URL diarahkan ke localhost karena kita akan menggunakan network host
+        DATABASE_URL = "postgres://taskflow:taskflow_secret@localhost:5432/taskflow?sslmode=disable"
     }
 
     stages {
-        stage('Preparation') {
+        stage('CI Pipeline (Vet, Test, Coverage)') {
             agent {
                 docker { 
                     image 'golang:1.22'
-                    // Jalankan sebagai root agar tidak kena permission denied saat membuat cache
-                    args '-u root'
-                }
-            }
-            steps {
-                dir("${env.PROJECT_DIR}") {
-                    sh 'go mod download'
-                }
-            }
-        }
-
-        stage('Static Analysis') {
-            agent {
-                docker { 
-                    image 'golang:1.22'
-                    args '-u root'
-                }
-            }
-            steps {
-                dir("${env.PROJECT_DIR}") {
-                    echo 'Running go vet...'
-                    sh 'go vet ./...'
-                }
-            }
-        }
-
-        stage('Unit Testing & Race Detector') {
-            agent {
-                docker { 
-                    image 'golang:1.22'
-                    args '-u root'
-                }
-            }
-            steps {
-                dir("${env.PROJECT_DIR}") {
-                    echo 'Running tests with race detector (CGO Enabled)...'
-                    sh 'CGO_ENABLED=1 go test -v -race ./internal/service/... ./internal/validator/... ./internal/handler/...'
-                }
-            }
-        }
-
-        stage('Coverage Gate') {
-            agent {
-                docker { 
-                    image 'golang:1.22'
-                    args '-u root'
+                    // Gunakan network host agar container Go bisa akses Postgres di localhost:5432
+                    // Mount docker socket agar bisa mematikan container db di akhir
+                    args '-u root -v /var/run/docker.sock:/var/run/docker.sock --network host'
                 }
             }
             steps {
                 dir("${env.PROJECT_DIR}") {
                     script {
-                        sh 'go test ./... -coverprofile=cov.out'
-                        def coverage = sh(script: "go tool cover -func=cov.out | grep total | awk '{print \$3}' | sed 's/%//'", returnStdout: true).trim()
-                        echo "Total project coverage: ${coverage}%"
+                        echo '🚀 Starting PostgreSQL Sidecar...'
+                        // Jalankan container postgres
+                        sh "docker run -d --name db-container -p 5432:5432 -e POSTGRES_DB=taskflow -e POSTGRES_USER=taskflow -e POSTGRES_PASSWORD=taskflow_secret postgres:16"
                         
-                        if (coverage.toFloat() < 75.0) {
-                            error "❌ Pipeline Failed: Coverage (${coverage}%) is below 75%!"
-                        } else {
-                            echo "✅ Coverage Gate Passed!"
+                        try {
+                            echo '⏳ Waiting for Database to be ready...'
+                            sh 'sleep 15' // Menunggu postgres startup
+                            
+                            echo '🔍 Running Static Analysis (Vet)...'
+                            sh 'go vet ./...'
+                            
+                            echo '🧪 Running Unit & Integration Tests...'
+                            // Jalankan test dengan -tags=integration agar postgres.go ikut terhitung
+                            sh "CGO_ENABLED=1 DATABASE_URL='${env.DATABASE_URL}' go test -v -race -tags=integration -coverprofile=cov.out ./..."
+                            
+                            echo '📊 Checking Coverage Gate...'
+                            def coverage = sh(script: "go tool cover -func=cov.out | grep total | awk '{print \$3}' | sed 's/%//'", returnStdout: true).trim()
+                            echo "Total Project Coverage: ${coverage}%"
+                            
+                            if (coverage.toFloat() < 75.0) {
+                                error "❌ FAILED: Coverage (${coverage}%) is still below 75%!"
+                            } else {
+                                echo "✅ SUCCESS: Coverage Gate Passed!"
+                            }
+
+                            echo '🏗️ Compiling Binary...'
+                            sh 'go build -o bin/taskflow-api ./cmd/server'
+                            
+                        } finally {
+                            echo '🧹 Cleaning up Database container...'
+                            sh "docker rm -f db-container || true"
                         }
                     }
-                }
-            }
-        }
-
-        stage('Build Binary') {
-            agent {
-                docker { 
-                    image 'golang:1.22'
-                    args '-u root'
-                }
-            }
-            steps {
-                dir("${env.PROJECT_DIR}") {
-                    echo 'Compiling application...'
-                    sh 'go build -o bin/taskflow-api ./cmd/server'
                 }
             }
         }
