@@ -1,7 +1,8 @@
 pipeline {
     agent {
         docker { 
-            image 'golang:1.22'
+            // MENGGUNAKAN CUSTOM IMAGE (GO + DOCKER CLI) AGAR LEBIH CEPAT
+            image 'ax3lrod/taskflow-ci:latest'
             // Mount socket dan gunakan network host
             args '-u root -v /var/run/docker.sock:/var/run/docker.sock --network host'
         }
@@ -17,9 +18,8 @@ pipeline {
         stage('Initialize') {
             steps {
                 dir("${env.PROJECT_DIR}") {
-                    echo '🔧 Installing Dependencies (One-time)...'
-                    // Instalasi Docker CLI hanya di awal
-                    sh 'apt-get update && apt-get install -y docker.io'
+                    echo '📦 Downloading Go Dependencies...'
+                    // Tidak perlu install docker.io lagi karena sudah ada di image
                     sh 'go mod download'
                 }
             }
@@ -45,7 +45,6 @@ pipeline {
         stage('Unit & Integration Tests') {
             steps {
                 dir("${env.PROJECT_DIR}") {
-                    // Gunakan -buildvcs=false untuk fix error 128
                     sh "CGO_ENABLED=1 DATABASE_URL='${env.DATABASE_URL}' go test -v -race -tags=integration -buildvcs=false ./..."
                 }
             }
@@ -55,7 +54,8 @@ pipeline {
             steps {
                 dir("${env.PROJECT_DIR}") {
                     script {
-                        sh 'go test ./... -coverprofile=cov.out -buildvcs=false'
+                        // FIX: Tambahkan -tags=integration agar postgres.go ikut terhitung!
+                        sh "DATABASE_URL='${env.DATABASE_URL}' go test ./... -tags=integration -coverprofile=cov.out -buildvcs=false"
                         def coverage = sh(script: "go tool cover -func=cov.out | grep total | awk '{print \$3}' | sed 's/%//'", returnStdout: true).trim()
                         echo "Total Project Coverage: ${coverage}%"
                         if (coverage.toFloat() < 75.0) {
@@ -69,7 +69,6 @@ pipeline {
         stage('Build Artifact') {
             steps {
                 dir("${env.PROJECT_DIR}") {
-                    // Fix exit status 128 dengan -buildvcs=false
                     sh 'go build -buildvcs=false -o bin/taskflow-api ./cmd/server'
                     echo "✅ Application Compiled Successfully!"
                 }
