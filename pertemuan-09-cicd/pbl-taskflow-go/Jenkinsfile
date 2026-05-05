@@ -13,9 +13,8 @@ pipeline {
             agent {
                 docker { 
                     image 'golang:1.22'
-                    // Gunakan network host agar container Go bisa akses Postgres di localhost:5432
-                    // Mount docker socket agar bisa mematikan container db di akhir
-                    args '-u root -v /var/run/docker.sock:/var/run/docker.sock --network host'
+                    // Mount docker socket DAN binary docker agar agent bisa jalanin perintah docker
+                    args '-u root -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker --network host'
                 }
             }
             steps {
