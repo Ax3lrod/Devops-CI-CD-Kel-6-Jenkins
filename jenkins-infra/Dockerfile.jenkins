@@ -5,8 +5,17 @@ USER root
 RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
 
 USER jenkins
-# Pre-install plugins penting agar tidak perlu install manual
-RUN jenkins-plugin-cli --plugins "configuration-as-code go docker-workflow docker-plugin git matrix-auth"
+# Tambahkan plugin-plugin pendukung agar dependensi ter-resolve dengan baik
+RUN jenkins-plugin-cli --plugins \
+    "configuration-as-code" \
+    "go" \
+    "docker-workflow" \
+    "docker-plugin" \
+    "git" \
+    "matrix-auth" \
+    "workflow-aggregator" \
+    "struct-relational-beans" \
+    "token-macro"
 
 # Environment variable untuk skip setup wizard
 ENV JAVA_OPTS="-Djenkins.install.runSetupWizard=false"
