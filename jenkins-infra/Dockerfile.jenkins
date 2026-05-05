@@ -1,0 +1,14 @@
+FROM jenkins/jenkins:lts
+
+USER root
+# Install Docker CLI agar Jenkins bisa manage sidecar container
+RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
+
+USER jenkins
+# Pre-install plugins penting agar tidak perlu install manual
+RUN jenkins-plugin-cli --plugins "configuration-as-code go docker-workflow docker-plugin git matrix-auth"
+
+# Environment variable untuk skip setup wizard
+ENV JAVA_OPTS="-Djenkins.install.runSetupWizard=false"
+# Lokasi file konfigurasi otomatis
+ENV CASC_JENKINS_CONFIG="/var/jenkins_home/casc.yaml"
