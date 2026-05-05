@@ -1,0 +1,15 @@
+# CI Image for TaskFlow Project
+# Menggabungkan Go 1.22 dan Docker CLI agar pipeline lebih cepat
+FROM golang:1.22
+
+# Install Docker CLI dan GCC (untuk -race)
+RUN apt-get update && apt-get install -y \
+    docker.io \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory default
+WORKDIR /app
+
+# Verifikasi instalasi
+RUN go version && docker --version

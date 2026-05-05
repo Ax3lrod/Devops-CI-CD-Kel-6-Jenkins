@@ -5,7 +5,7 @@ USER root
 RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
 
 USER jenkins
-# Perbaikan ID Plugin (Go -> golang) agar tidak error 404
+# Tambahkan pipeline-stage-view agar alur visual muncul di Dashboard
 RUN jenkins-plugin-cli --plugins \
     "configuration-as-code" \
     "golang" \
@@ -14,7 +14,8 @@ RUN jenkins-plugin-cli --plugins \
     "git" \
     "matrix-auth" \
     "workflow-aggregator" \
-    "token-macro"
+    "token-macro" \
+    "pipeline-stage-view"
 
 # Environment variable untuk skip setup wizard
 ENV JAVA_OPTS="-Djenkins.install.runSetupWizard=false"
