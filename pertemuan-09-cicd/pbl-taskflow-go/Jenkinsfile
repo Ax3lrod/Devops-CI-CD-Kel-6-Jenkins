@@ -2,7 +2,7 @@ pipeline {
     agent {
         docker { 
             image 'ax3lrod/taskflow-ci:latest'
-            // Mount socket agar bisa manage container DB dan gunakan network host
+            // Konfigurasi VPS agar Jenkins bisa mengelola container dan network dengan lancar
             args '-u root -v /var/run/docker.sock:/var/run/docker.sock --network host'
         }
     }
@@ -11,11 +11,15 @@ pipeline {
         PROJECT_DIR = 'pertemuan-09-cicd/pbl-taskflow-go'
         GOCACHE = "${WORKSPACE}/.cache"
         DATABASE_URL = "postgres://taskflow:taskflow_secret@localhost:5432/taskflow?sslmode=disable"
+        // Target repositori Docker Hub kamu
+        DOCKER_IMAGE = "fikriau/taskflow-api"
     }
 
     stages {
         stage('1. Preparation') {
             steps {
+                // Mengatasi kendala izin direktori Git di lingkungan VPS
+                sh 'git config --global --add safe.directory "*"'
                 dir("${env.PROJECT_DIR}") {
                     echo '📦 Downloading Dependencies...'
                     sh 'go mod download'
@@ -35,11 +39,8 @@ pipeline {
         stage('3. Database Startup') {
             steps {
                 echo '🚀 Starting PostgreSQL Sidecar...'
-                // Bersihkan container lama jika ada
                 sh "docker rm -f db-container || true"
-                // Jalankan Postgres
                 sh "docker run -d --name db-container -p 5432:5432 -e POSTGRES_DB=taskflow -e POSTGRES_USER=taskflow -e POSTGRES_PASSWORD=taskflow_secret postgres:16"
-                // Beri waktu untuk startup
                 sh 'sleep 15'
             }
         }
@@ -47,7 +48,7 @@ pipeline {
         stage('4. Unit Testing') {
             steps {
                 dir("${env.PROJECT_DIR}") {
-                    echo '🧪 Running Unit Tests with Race Detector...'
+                    echo '🧪 Running Unit Tests...'
                     sh "CGO_ENABLED=1 go test -v -race -buildvcs=false ./internal/service/... ./internal/validator/... ./internal/handler/..."
                 }
             }
@@ -56,7 +57,7 @@ pipeline {
         stage('5. Integration Testing') {
             steps {
                 dir("${env.PROJECT_DIR}") {
-                    echo '🔗 Running Integration Tests (Postgres)...'
+                    echo '🔗 Running Integration Tests...'
                     sh "CGO_ENABLED=1 DATABASE_URL='${env.DATABASE_URL}' go test -v -race -tags=integration -buildvcs=false ./internal/repository/..."
                 }
             }
@@ -66,15 +67,13 @@ pipeline {
             steps {
                 dir("${env.PROJECT_DIR}") {
                     script {
-                        echo '📊 Calculating Code Coverage...'
+                        echo '📊 Checking Coverage (Minimum 75%)...'
                         sh "DATABASE_URL='${env.DATABASE_URL}' go test ./... -tags=integration -coverprofile=cov.out -buildvcs=false"
                         def coverage = sh(script: "go tool cover -func=cov.out | grep total | awk '{print \$3}' | sed 's/%//'", returnStdout: true).trim()
                         echo "Total Project Coverage: ${coverage}%"
                         
                         if (coverage.toFloat() < 75.0) {
-                            error "❌ FAILED: Coverage (${coverage}%) is below 75% threshold!"
-                        } else {
-                            echo "✅ SUCCESS: Coverage Gate Passed!"
+                            error "❌ FAILED: Coverage (${coverage}%) di bawah batas minimal 75%!"
                         }
                     }
                 }
@@ -86,7 +85,34 @@ pipeline {
                 dir("${env.PROJECT_DIR}") {
                     echo '🏗️ Compiling Application...'
                     sh 'go build -buildvcs=false -o bin/taskflow-api ./cmd/server'
-                    echo "✅ Build Successful!"
+                }
+            }
+        }
+
+        stage('8. CD - Build & Push Docker Hub') {
+            steps {
+                script {
+                    // Membuat tag unik berdasarkan 7 digit pertama commit SHA
+                    def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    def fullTag = "${env.DOCKER_IMAGE}:sha-${commitSha}"
+
+                    echo "🚀 Memulai proses Build & Push untuk image: ${fullTag}"
+
+                    // Memanggil kredensial 'dockerhub-fikri' yang harus didaftarkan di Jenkins VPS
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-fikri', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                        sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+                        
+                        dir("${env.PROJECT_DIR}") {
+                            // Proses build menggunakan Dockerfile multi-stage
+                            sh "docker build -t ${fullTag} ."
+                            sh "docker push ${fullTag}"
+                            
+                            // Menambahkan tag latest sebagai penanda versi paling baru
+                            sh "docker tag ${fullTag} ${env.DOCKER_IMAGE}:latest"
+                            sh "docker push ${env.DOCKER_IMAGE}:latest"
+                        }
+                        sh "docker logout"
+                    }
                 }
             }
         }
@@ -94,10 +120,9 @@ pipeline {
 
     post {
         always {
-            echo '🧹 Cleaning up Database container...'
+            echo '🧹 Pembersihan container database...'
             sh "docker rm -f db-container || true"
             dir("${env.PROJECT_DIR}") {
-                echo '📥 Archiving Test Artifacts...'
                 archiveArtifacts artifacts: 'cov.out', allowEmptyArchive: true
             }
         }
