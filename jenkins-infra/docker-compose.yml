@@ -3,15 +3,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.jenkins
-    container_name: jenkins-local
+    # NAMA CONTAINER UNIK KELOMPOK 6
+    container_name: jenkins-kel-6
     ports:
-      - "8080:8080"
-      - "50000:50000"
+      # PORT UNIK KELOMPOK 6 (Agar tidak bentrok dengan kelompok lain)
+      - "8086:8080"
+      - "50006:50000"
     volumes:
-      - jenkins_home:/var/jenkins_home
+      - jenkins_home_kel6:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
       - ./casc.yaml:/var/jenkins_home/casc.yaml:ro
     restart: unless-stopped
 
 volumes:
-  jenkins_home:
+  # VOLUME UNIK AGAR DATA TIDAK TERCAMPUR
+  jenkins_home_kel6:
