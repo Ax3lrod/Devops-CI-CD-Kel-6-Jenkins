@@ -5,13 +5,14 @@ USER root
 RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
 
 USER jenkins
-# Tambahkan pipeline-stage-view agar alur visual muncul di Dashboard
+# Tambahkan plugin github agar muncul pilihan "GitHub hook trigger"
 RUN jenkins-plugin-cli --plugins \
     "configuration-as-code" \
     "golang" \
     "docker-workflow" \
     "docker-plugin" \
     "git" \
+    "github" \
     "matrix-auth" \
     "workflow-aggregator" \
     "token-macro" \
