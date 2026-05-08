@@ -169,14 +169,14 @@ pipeline {
                     string(credentialsId: 'telegram-chat-id', variable: 'CHAT_ID')
                 ]) {
                     def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    def branchName = env.BRANCH_NAME ?: 'unknown'
+                    def branchName = sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
                     def buildUrl = env.BUILD_URL ?: 'unknown'
                     def now = new Date().format("yyyy-MM-dd HH:mm:ss", TimeZone.getTimeZone('Asia/Jakarta'))
 
-                    def message = "✅ *Pipeline Sukses*\\n\\n" +
-                        "• *Branch*: ${branchName}\\n" +
-                        "• *Commit*: ${commitSha}\\n" +
-                        "• *Waktu*: ${now} WIB\\n" +
+                    def message = "✅ *Pipeline Sukses*\n\n" +
+                        "• *Branch*: ${branchName}\n" +
+                        "• *Commit*: ${commitSha}\n" +
+                        "• *Waktu*: ${now} WIB\n" +
                         "• *Link*: ${buildUrl}"
 
                     sh """
@@ -196,14 +196,14 @@ pipeline {
                     string(credentialsId: 'telegram-chat-id', variable: 'CHAT_ID')
                 ]) {
                     def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    def branchName = env.BRANCH_NAME ?: 'unknown'
+                    def branchName = sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
                     def buildUrl = env.BUILD_URL ?: 'unknown'
                     def now = new Date().format("yyyy-MM-dd HH:mm:ss", TimeZone.getTimeZone('Asia/Jakarta'))
 
-                    def message = "❌ *Pipeline Gagal*\\n\\n" +
-                        "• *Branch*: ${branchName}\\n" +
-                        "• *Commit*: ${commitSha}\\n" +
-                        "• *Waktu*: ${now} WIB\\n" +
+                    def message = "❌ *Pipeline Gagal*\n\n" +
+                        "• *Branch*: ${branchName}\n" +
+                        "• *Commit*: ${commitSha}\n" +
+                        "• *Waktu*: ${now} WIB\n" +
                         "• *Link*: ${buildUrl}"
 
                     sh """
