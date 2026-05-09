@@ -192,7 +192,6 @@ pipeline {
             }
         }
     }
-}
 
     // Mengirim notifikasi Telegram dan membersihkan resource.
     post {
@@ -260,4 +259,4 @@ pipeline {
             }
         }
     }
-
+}
