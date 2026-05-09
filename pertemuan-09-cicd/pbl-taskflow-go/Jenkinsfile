@@ -156,6 +156,7 @@ pipeline {
                     echo "✅ Smoke test berhasil. Versi staging STABIL untuk demo."
                 """
             }
+          }
         }
 
         stage ('Promote to Stable') {
@@ -190,8 +191,7 @@ pipeline {
                 }
             }
         }
-
-}
+    }
 
     // Mengirim notifikasi Telegram dan membersihkan resource.
     post {
@@ -260,3 +260,4 @@ pipeline {
         }
     }
 }
+
