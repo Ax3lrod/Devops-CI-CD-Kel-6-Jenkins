@@ -157,7 +157,40 @@ pipeline {
                 """
             }
         }
-    }
+
+        stage ('Promote to Stable') {
+            steps {
+                script {
+                   def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+
+                   echo "Memulai proses update ke tag stable untuk versi: ${commitSha}"
+
+                   def fullTag = "${env.DOCKER_IMAGE}:sha-${commitSha}"
+
+                     withCredentials([usernamePassword(credentialsId: 'dockerhub-fikri', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                            sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+                            
+                            // backup stable sebelumnya sebagai stable-prev
+                            sh """
+                                docker pull ${env.DOCKER_IMAGE}:stable || true
+                                docker tag ${env.DOCKER_IMAGE}:stable ${env.DOCKER_IMAGE}:stable-prev || true
+                                docker push ${env.DOCKER_IMAGE}:stable-prev || true
+                            """
+
+                            // promote new stable
+                            sh """
+                                docker tag ${shaImage} ${env.DOCKER_IMAGE}:stable
+                                docker push ${env.DOCKER_IMAGE}:stable
+                            """
+
+                            sh "docker logout"
+                     }
+                    
+                    echo "✅ Proses update stable selesai. Tag stable sekarang menunjuk ke versi: ${commitSha}"
+                }
+            }
+        }
+
 }
 
     // Mengirim notifikasi Telegram dan membersihkan resource.
