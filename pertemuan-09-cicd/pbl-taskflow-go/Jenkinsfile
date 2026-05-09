@@ -179,7 +179,7 @@ pipeline {
 
                             // promote new stable
                             sh """
-                                docker tag ${shaImage} ${env.DOCKER_IMAGE}:stable
+                                docker tag ${fullTag} ${env.DOCKER_IMAGE}:stable
                                 docker push ${env.DOCKER_IMAGE}:stable
                             """
 
@@ -260,4 +260,3 @@ pipeline {
         }
     }
 }
-
