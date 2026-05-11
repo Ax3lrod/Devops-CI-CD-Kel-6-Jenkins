@@ -138,7 +138,7 @@ pipeline {
                 sh """
                     RETRIES=10
                     COUNT=0
-                    until curl -sf http://localhost:${MAPPED_PORT}/healthm; do
+                    until curl -sf http://localhost:${MAPPED_PORT}/health; do
                         COUNT=\$((COUNT+1))
                         if [ \$COUNT -ge \$RETRIES ]; then
                             echo "❌ FATAL: Server tidak merespons setelah 20 detik (Health check gagal)!"
