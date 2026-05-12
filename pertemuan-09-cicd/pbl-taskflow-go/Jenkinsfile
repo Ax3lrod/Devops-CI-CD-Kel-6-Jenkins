@@ -55,10 +55,12 @@ pipeline {
 
         stage('3. Database Startup') {
             steps {
-                echo '🚀 Starting PostgreSQL Sidecar...'
-                sh "docker rm -f db-container || true"
-                sh "docker run -d --name db-container -p 5432:5432 -e POSTGRES_DB=taskflow -e POSTGRES_USER=taskflow -e POSTGRES_PASSWORD=taskflow_secret postgres:16"
-                sh 'sleep 15'
+                script {
+                    def dbContainerName = "db-container-${env.BUILD_ID}"
+                    echo "🚀 Starting PostgreSQL Sidecar: ${dbContainerName}"
+                    sh "docker run -d --name ${dbContainerName} -p 5432:5432 -e POSTGRES_DB=taskflow -e POSTGRES_USER=taskflow -e POSTGRES_PASSWORD=taskflow_secret postgres:16"
+                    sh 'sleep 15'
+                }
             }
         }
 
@@ -303,8 +305,11 @@ pipeline {
 
         always {
             echo '🧹 Membersihkan container...'
-            sh "docker rm -f db-container || true"
-            sh "docker rm -f \$(docker ps -aq --filter name=taskflow-smoke) 2>/dev/null || true"
+            script {
+                def dbContainerName = "db-container-${env.BUILD_ID}"
+                sh "docker rm -f ${dbContainerName} || true"
+                sh "docker rm -f \$(docker ps -aq --filter name=taskflow-smoke) 2>/dev/null || true"
+            }
             
             dir("${env.PROJECT_DIR}") {
                 // UPDATE: Menambahkan pengarsipan file JSON laporan security
