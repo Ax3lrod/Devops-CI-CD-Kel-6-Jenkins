@@ -2,7 +2,6 @@ pipeline {
     agent {
         docker { 
             image 'ax3lrod/taskflow-ci:latest'
-            // Konfigurasi VPS agar Jenkins bisa mengelola container dan network dengan lancar
             args '-u root -v /var/run/docker.sock:/var/run/docker.sock --network host'
         }
     }
@@ -11,16 +10,13 @@ pipeline {
         PROJECT_DIR = 'pertemuan-09-cicd/pbl-taskflow-go'
         GOCACHE = "${WORKSPACE}/.cache"
         DATABASE_URL = "postgres://taskflow:taskflow_secret@localhost:5432/taskflow?sslmode=disable"
-        // Target repositori Docker Hub kamu
         DOCKER_IMAGE = "fikriau/taskflow-api"
     }
 
     stages {
         stage('1. Preparation') {
             steps {
-                // Memastikan Jenkins menarik branch/PR yang benar
                 checkout scm
-                // Mengatasi kendala izin direktori Git di lingkungan VPS
                 sh 'git config --global --add safe.directory "*"'
                 dir("${env.PROJECT_DIR}") {
                     echo '📦 Downloading Dependencies...'
@@ -43,10 +39,7 @@ pipeline {
                 dir("${env.PROJECT_DIR}") {
                     echo '🛡️ Running Gosec (Static Application Security Testing)...'
                     script {
-                        // Install gosec jika belum ada di environment
                         sh 'go install github.com/securego/gosec/v2/cmd/gosec@v2.20.0'
-                        // Jalankan scan. Pipeline akan FAIL jika ada temuan HIGH (exit-code non-zero)
-                        // Laporan disimpan sebagai gosec-report.json
                         sh '/go/bin/gosec -fmt json -out gosec-report.json ./...'
                     }
                 }
@@ -112,22 +105,19 @@ pipeline {
             when { branch 'main' }
             steps {
                 script {
-                    // Membuat tag unik berdasarkan 7 digit pertama commit SHA
                     def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     def fullTag = "${env.DOCKER_IMAGE}:sha-${commitSha}"
 
                     echo "🚀 Memulai proses Build & Push untuk image: ${fullTag}"
 
-                    // Memanggil kredensial 'dockerhub-fikri' yang harus didaftarkan di Jenkins VPS
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-fikri', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
                         
                         dir("${env.PROJECT_DIR}") {
-                            // Proses build menggunakan Dockerfile multi-stage
                             sh "docker build -t ${fullTag} ."
                             sh "docker push ${fullTag}"
                             
-                            // Menambahkan tag latest sebagai penanda versi paling baru
+
                             sh "docker tag ${fullTag} ${env.DOCKER_IMAGE}:latest"
                             sh "docker push ${env.DOCKER_IMAGE}:latest"
                         }
@@ -137,7 +127,6 @@ pipeline {
             }
         }
 
-        // === SCENARIO 6: KATEGORI D - CONTAINER SCAN (TAMBAHAN KAMU) ===
         stage('8.1 Security Audit: Container Scan') {
             steps {
                 script {
@@ -145,9 +134,7 @@ pipeline {
                     def fullTag = "${env.DOCKER_IMAGE}:sha-${commitSha}"
                     
                     echo "🛡️ Scanning Docker Image: ${fullTag}"
-                    // Install Trivy secara sementara untuk scanning
                     sh 'curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin'
-                    // Scan image. Pipeline akan FAIL jika ada temuan HIGH atau CRITICAL
                     sh "trivy image --severity HIGH,CRITICAL --exit-code 0 --format json --output trivy-report.json ${fullTag}"
                 }
             }
@@ -312,7 +299,6 @@ pipeline {
             }
             
             dir("${env.PROJECT_DIR}") {
-                // UPDATE: Menambahkan pengarsipan file JSON laporan security
                 archiveArtifacts artifacts: 'cov.out, **/*.json', allowEmptyArchive: true
             }
         }
