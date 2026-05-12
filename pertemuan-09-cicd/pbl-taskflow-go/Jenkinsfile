@@ -64,7 +64,7 @@ pipeline {
             steps {
                 dir("${env.PROJECT_DIR}") {
                     echo '🧪 Running Unit Tests...'
-                    sh "CGO_ENABLED=1 go test -v -race -buildvcs=false ./internal/service/... ./internal/validator/... ./internal/handler/... || true"
+                    sh "CGO_ENABLED=1 go test -v -race -buildvcs=false ./internal/service/... ./internal/validator/... ./internal/handler/..."
                 }
             }
         }
@@ -78,7 +78,6 @@ pipeline {
             }
         }
 
-    /*
         stage('6. Coverage Gate') {
             steps {
                 dir("${env.PROJECT_DIR}") {
@@ -95,7 +94,6 @@ pipeline {
                 }
             }
         }
-    */
 
         stage('7. Build Binary') {
             steps {
