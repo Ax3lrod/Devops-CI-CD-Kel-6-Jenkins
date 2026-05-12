@@ -70,6 +70,7 @@ rollback:
 	@echo "→ Rolling back ke $(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG)"
 	docker pull $(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG)
 	docker stop taskflow-api 2>/dev/null || true
+	docker rm -f taskflow-api 2>/dev/null || true
 	docker run -d --rm \
 	  --name taskflow-api \
 	  -p 8080:8080 \
