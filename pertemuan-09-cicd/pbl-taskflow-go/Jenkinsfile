@@ -147,23 +147,39 @@ pipeline {
                 }
             }
         }
+        
+        stage('9. Deploy to VPS') {
+            steps {
+                script {
+                    echo "🚀 Deploying SHA image to VPS..."
 
-        stage('9. Smoke Test') {
+                    commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    def IMAGE_TAG = "${env.DOCKER_IMAGE}:sha-${commitSha}" 
+
+                    sshagent(credentials: ['vps-ssh']) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no kelompok6@10.4.89.175 '
+                                set -e
+                                cd /home/kelompok6/Devops-CI-CD-Kel-6-Jenkins/pertemuan-09-cicd/pbl-taskflow-go
+                                docker compose pull
+                                docker compose down
+                                export IMAGE_TAG=${IMAGE_TAG}
+                                docker compose up -d --force-recreate
+                            '
+                        """
+                    }
+
+                    echo "✅ Deployment selesai. Aplikasi berjalan di VPS dengan image stable terbaru."
+                }
+            }
+        }
+
+        stage('10. Smoke Test') {
         steps {
             script {
-                def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                
                 echo "🔍 Memulai Smoke Test otomatis untuk mencegah server mati sebelum Demo Investor..."
 
-                sh """
-                    docker run -d -P \\
-                        --name taskflow-smoke-${commitSha} \\
-                        -e DATABASE_URL='postgres://taskflow:taskflow_secret@host.docker.internal:5432/taskflow?sslmode=disable' \\
-                        --add-host host.docker.internal:host-gateway \\
-                        ${env.DOCKER_IMAGE}:sha-${commitSha}
-                """
-
-                def MAPPED_PORT = sh(script: "docker port taskflow-smoke-${commitSha} 8080 | awk -F ':' '{print \$2}'", returnStdout: true).trim()
+                def MAPPED_PORT = "8080"
                 echo "🚀 Server staging berjalan di port: ${MAPPED_PORT}"
 
                 sh """
@@ -173,7 +189,6 @@ pipeline {
                         COUNT=\$((COUNT+1))
                         if [ \$COUNT -ge \$RETRIES ]; then
                             echo "❌ FATAL: Server tidak merespons setelah 20 detik (Health check gagal)!"
-                            docker logs taskflow-smoke-${commitSha}
                             exit 1
                         fi
                         echo "Menunggu server siap... (Percobaan \$COUNT/\$RETRIES)"
@@ -190,7 +205,7 @@ pipeline {
           }
         }
 
-        stage ('10. Promote to Stable') {
+        stage ('11. Promote to Stable') {
             steps {
                 script {
                    def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
@@ -217,58 +232,6 @@ pipeline {
                      }
                     
                     echo "✅ Proses update stable selesai. Tag stable sekarang menunjuk ke versi: ${commitSha}"
-                }
-            }
-        }
-
-        stage('11. Deploy to VPS') {
-            steps {
-                script {
-                    echo "🚀 Deploying latest STABLE version to VPS..."
-
-                    sshagent(credentials: ['vps-ssh']) {
-                        sh """
-                            ssh -o StrictHostKeyChecking=no kelompok6@10.4.89.175 '
-                                set -e
-                                cd /home/kelompok6/Devops-CI-CD-Kel-6-Jenkins/pertemuan-09-cicd/pbl-taskflow-go
-                                docker compose pull
-                                docker compose down
-                                docker compose up -d --force-recreate
-                            '
-                        """
-                    }
-
-                    echo "✅ Deployment selesai. Aplikasi berjalan di VPS dengan image stable terbaru."
-                }
-            }
-        }
-
-        stage ('12. Post Deployment Smoke Test') {
-            steps {
-                script {
-                    echo "🔍 Memulai Post-Deployment Smoke Test untuk memastikan server VPS stabil setelah update..."
-
-                    def MAPPED_PORT = "8080"
-
-                    sh """
-                        RETRIES=10
-                        COUNT=0
-                        until curl -sf http://localhost:${MAPPED_PORT}/health; do
-                            COUNT=\$((COUNT+1))
-                            if [ \$COUNT -ge \$RETRIES ]; then
-                                echo "❌ FATAL: Server tidak merespons setelah 20 detik (Health check gagal)!"
-                                exit 1
-                            fi
-                            echo "Menunggu server siap... (Percobaan \$COUNT/\$RETRIES)"
-                            sleep 2
-                        done
-                    """
-
-                    sh """
-                        echo "🔎 Memastikan endpoint utama berjalan: GET /api/v1/stats"
-                        curl -sf http://localhost:${MAPPED_PORT}/api/v1/stats || (echo "❌ FATAL: Stats endpoint mati!"; exit 1)
-                        echo "✅ Post-deployment smoke test berhasil. Server VPS STABIL."
-                    """
                 }
             }
         }

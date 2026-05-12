@@ -21,7 +21,7 @@ services:
       retries: 10
 
   app:
-    image: fikriau/taskflow-api:stable
+    image: ${IMAGE_TAG:-fikriau/taskflow-api:stable}
     container_name: taskflow-api
     restart: always
     ports:
