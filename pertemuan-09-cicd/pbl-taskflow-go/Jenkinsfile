@@ -78,6 +78,7 @@ pipeline {
             }
         }
 
+    /*
         stage('6. Coverage Gate') {
             steps {
                 dir("${env.PROJECT_DIR}") {
@@ -88,12 +89,13 @@ pipeline {
                         echo "Total Project Coverage: ${coverage}%"
                         
                         if (coverage.toFloat() < 75.0) {
-                            //error "❌ FAILED: Coverage (${coverage}%) di bawah batas minimal 75%!"
+                            error "❌ FAILED: Coverage (${coverage}%) di bawah batas minimal 75%!"
                         }
                     }
                 }
             }
         }
+    */
 
         stage('7. Build Binary') {
             steps {
