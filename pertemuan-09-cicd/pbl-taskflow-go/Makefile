@@ -79,7 +79,7 @@ rollback:
 
 	curl -sf http://$(HOST_IP):8080/health || (echo "❌ Health check gagal!"; exit 1)
 
-	@echo "✅ Rollback berhasil ke $(ROLLBACK_TAG)""
+	@echo "✅ Rollback berhasil ke $(ROLLBACK_TAG)"
 
 ## Jalankan postgres saja (untuk development)
 db-up:
