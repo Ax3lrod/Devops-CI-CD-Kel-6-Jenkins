@@ -36,14 +36,13 @@ pipeline {
             }
         }
 
-        // === SCENARIO 6: KATEGORI B - SAST (TAMBAHAN KAMU) ===
         stage('2.1 Security Audit: SAST') {
             steps {
                 dir("${env.PROJECT_DIR}") {
                     echo '🛡️ Running Gosec (Static Application Security Testing)...'
                     script {
                         // Install gosec jika belum ada di environment
-                        sh 'go install github.com/securego/gosec/v2/cmd/gosec@latest'
+                        sh 'go install github.com/securego/gosec/v2/cmd/gosec@v2.20.0'
                         // Jalankan scan. Pipeline akan FAIL jika ada temuan HIGH (exit-code non-zero)
                         // Laporan disimpan sebagai gosec-report.json
                         sh '/go/bin/gosec -fmt json -out gosec-report.json ./...'
@@ -203,14 +202,12 @@ pipeline {
                      withCredentials([usernamePassword(credentialsId: 'dockerhub-fikri', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                             sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
                             
-                            // backup stable sebelumnya sebagai stable-prev
                             sh """
                                 docker pull ${env.DOCKER_IMAGE}:stable || true
                                 docker tag ${env.DOCKER_IMAGE}:stable ${env.DOCKER_IMAGE}:stable-prev || true
                                 docker push ${env.DOCKER_IMAGE}:stable-prev || true
                             """
 
-                            // promote new stable
                             sh """
                                 docker tag ${fullTag} ${env.DOCKER_IMAGE}:stable
                                 docker push ${env.DOCKER_IMAGE}:stable
@@ -256,7 +253,6 @@ pipeline {
         }
     }
 
-    // Mengirim notifikasi Telegram dan membersihkan resource.
     post {
         success {
             script {
