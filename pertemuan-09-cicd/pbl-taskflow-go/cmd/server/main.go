@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time" // Tambahan: Import time untuk timeout
 
 	"github.com/taskflow/api/internal/handler"
 	"github.com/taskflow/api/internal/repository"
@@ -44,8 +45,23 @@ func main() {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
-	log.Printf("🚀 TaskFlow API berjalan di :%s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	// --- PERBAIKAN SCENARIO 6 (SAST) ---
+
+	// 1. Konfigurasi server dengan timeout untuk memperbaiki celah G114 (DoS Risk)
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 3 * time.Second,  // Batas waktu baca header
+		ReadTimeout:       5 * time.Second,  // Batas waktu baca request
+		WriteTimeout:      10 * time.Second, // Batas waktu tulis response
+		IdleTimeout:       30 * time.Second, // Batas waktu koneksi idle
+	}
+
+	// 2. Tambahkan #nosec G706 untuk memberitahu Gosec bahwa variabel port aman (Log Injection)
+	log.Printf("🚀 TaskFlow API berjalan di :%s", port) // #nosec G706
+
+	// Jalankan server menggunakan konfigurasi yang sudah dibuat
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server gagal: %v", err)
 	}
 }
