@@ -36,6 +36,22 @@ pipeline {
             }
         }
 
+        // === SCENARIO 6: KATEGORI B - SAST (TAMBAHAN KAMU) ===
+        stage('2.1 Security Audit: SAST') {
+            steps {
+                dir("${env.PROJECT_DIR}") {
+                    echo '🛡️ Running Gosec (Static Application Security Testing)...'
+                    script {
+                        // Install gosec jika belum ada di environment
+                        sh 'go install github.com/securego/gosec/v2/cmd/gosec@latest'
+                        // Jalankan scan. Pipeline akan FAIL jika ada temuan HIGH (exit-code non-zero)
+                        // Laporan disimpan sebagai gosec-report.json
+                        sh '/go/bin/gosec -fmt json -out gosec-report.json ./...'
+                    }
+                }
+            }
+        }
+
         stage('3. Database Startup') {
             steps {
                 echo '🚀 Starting PostgreSQL Sidecar...'
@@ -117,6 +133,22 @@ pipeline {
             }
         }
 
+        // === SCENARIO 6: KATEGORI D - CONTAINER SCAN (TAMBAHAN KAMU) ===
+        stage('8.1 Security Audit: Container Scan') {
+            steps {
+                script {
+                    def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    def fullTag = "${env.DOCKER_IMAGE}:sha-${commitSha}"
+                    
+                    echo "🛡️ Scanning Docker Image: ${fullTag}"
+                    // Install Trivy secara sementara untuk scanning
+                    sh 'curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin'
+                    // Scan image. Pipeline akan FAIL jika ada temuan HIGH atau CRITICAL
+                    sh "trivy image --severity HIGH,CRITICAL --exit-code 1 --format json --output trivy-report.json ${fullTag}"
+                }
+            }
+        }
+
         stage('9. Smoke Test') {
         steps {
             script {
@@ -192,7 +224,7 @@ pipeline {
             }
         }
 
-        stage('10. Deploy to VPS') {
+        stage('11. Deploy to VPS') {
             steps {
                 script {
                     echo "🚀 Deploying latest STABLE version to VPS..."
@@ -241,7 +273,8 @@ pipeline {
                         "• *Branch*: ${branchName}\n" +
                         "• *Commit*: ${commitSha}\n" +
                         "• *Waktu*: ${now} WIB\n" +
-                        "• *Link*: ${buildUrl}"
+                        "• *Link*: ${buildUrl}\n" +
+                        "• *Security Scan*: Laporan JSON tersedia di Artifacts"
 
                     sh """
                         curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
@@ -268,7 +301,8 @@ pipeline {
                         "• *Branch*: ${branchName}\n" +
                         "• *Commit*: ${commitSha}\n" +
                         "• *Waktu*: ${now} WIB\n" +
-                        "• *Link*: ${buildUrl}"
+                        "• *Link*: ${buildUrl}\n" +
+                        "• *Catatan*: Periksa log untuk kegagalan Test atau Security Audit"
 
                     sh """
                         curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
@@ -286,7 +320,8 @@ pipeline {
             sh "docker rm -f \$(docker ps -aq --filter name=taskflow-smoke) 2>/dev/null || true"
             
             dir("${env.PROJECT_DIR}") {
-                archiveArtifacts artifacts: 'cov.out', allowEmptyArchive: true
+                // UPDATE: Menambahkan pengarsipan file JSON laporan security
+                archiveArtifacts artifacts: 'cov.out, **/*.json', allowEmptyArchive: true
             }
         }
     }
