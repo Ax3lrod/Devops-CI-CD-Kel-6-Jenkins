@@ -163,6 +163,7 @@ pipeline {
                             ssh -o StrictHostKeyChecking=no kelompok6@10.4.89.175 '
                                 set -e
                                 cd /home/kelompok6/Devops-CI-CD-Kel-6-Jenkins/pertemuan-09-cicd/pbl-taskflow-go
+                                git pull origin main
                                 docker compose pull
                                 docker compose down
                                 export IMAGE_TAG=${IMAGE_TAG}
