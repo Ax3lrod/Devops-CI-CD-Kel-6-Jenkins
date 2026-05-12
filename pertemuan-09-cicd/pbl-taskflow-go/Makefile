@@ -71,13 +71,17 @@ rollback:
 
 	docker pull $(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG)
 
-	export IMAGE_TAG=$(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG) && \
-	docker compose up -d --force-recreate
+	IMAGE_TAG=$(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG) docker compose up -d --force-recreate
 
 	@echo "⏳ Menunggu server siap..."
 	@sleep 5
 
-	curl -sf http://$(HOST_IP):8080/health || (echo "❌ Health check gagal!"; exit 1)
+	@if curl -sf http://localhost:8080/health; then \
+		echo "✅ Health check OK"; \
+	else \
+		echo "❌ Health check gagal!"; \
+		exit 1; \
+	fi
 
 	@echo "✅ Rollback berhasil ke $(ROLLBACK_TAG)"
 
