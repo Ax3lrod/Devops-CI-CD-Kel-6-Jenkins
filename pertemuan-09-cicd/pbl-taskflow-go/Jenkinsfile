@@ -18,6 +18,8 @@ pipeline {
     stages {
         stage('1. Preparation') {
             steps {
+                // Point S2: Memastikan Jenkins menarik branch/PR yang benar secara dinamis
+                checkout scm
                 // Mengatasi kendala izin direktori Git di lingkungan VPS
                 sh 'git config --global --add safe.directory "*"'
                 dir("${env.PROJECT_DIR}") {
