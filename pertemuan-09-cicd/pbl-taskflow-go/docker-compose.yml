@@ -1,33 +1,29 @@
-version: '3.9'
+version: "3.9"
 
 services:
 
-  # ── Database ────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: taskflow-db
+    restart: always
     environment:
-      POSTGRES_DB:       taskflow
-      POSTGRES_USER:     taskflow
+      POSTGRES_DB: taskflow
+      POSTGRES_USER: taskflow
       POSTGRES_PASSWORD: taskflow_secret
-      # Migration SQL dijalankan via POSTGRES_INITDB_ARGS tidak bisa,
-      # jadi kita gunakan script init via environment variable:
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # NOTE: Volume mount ./migrations dihapus karena path mengandung spasi & titik dua.
-      # Migration akan dijalankan otomatis oleh aplikasi (lihat postgres.go Migrate()).
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U taskflow -d taskflow"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # ── Aplikasi ────────────────────────────────────────────────────────────────
   app:
-    build: .
+    image: fikriau/taskflow-api:stable
     container_name: taskflow-api
+    restart: always
     ports:
       - "8080:8080"
     environment:
@@ -36,7 +32,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
 
 volumes:
   pgdata:

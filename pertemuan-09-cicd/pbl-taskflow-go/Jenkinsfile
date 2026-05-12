@@ -228,26 +228,49 @@ pipeline {
 
                     def containerName = "taskflow-api"
 
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-fikri', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
-                        sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+                    dir("${env.PROJECT_DIR}") {
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub-fikri', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                            sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
 
-                        sh "docker pull ${env.DOCKER_IMAGE}:stable"
+                            sh "docker compose pull"
+                            sh "docker compose down"    
+                            sh "docker compose up -d --force-recreate"
 
-                        sh "docker rm -f ${containerName} || true"
-
-                        sh """
-                            docker run -d \
-                                --name ${containerName} \
-                                --restart always \
-                                -p 8080:8080 \
-                                -e DATABASE_URL='${env.DATABASE_URL}' \
-                                ${env.DOCKER_IMAGE}:stable
-                        """
-
-                        sh "docker logout"
+                            sh "docker logout"
+                        }
                     }
 
                     echo "✅ Deployment selesai. Aplikasi berjalan di VPS dengan image stable terbaru."
+                }
+            }
+        }
+
+        stage ('12. Post Deployment Smoke Test') {
+            steps {
+                script {
+                    echo "🔍 Memulai Post-Deployment Smoke Test untuk memastikan server VPS stabil setelah update..."
+
+                    def MAPPED_PORT = "8080"
+
+                    sh """
+                        RETRIES=10
+                        COUNT=0
+                        until curl -sf http://localhost:${MAPPED_PORT}/health; do
+                            COUNT=\$((COUNT+1))
+                            if [ \$COUNT -ge \$RETRIES ]; then
+                                echo "❌ FATAL: Server tidak merespons setelah 20 detik (Health check gagal)!"
+                                exit 1
+                            fi
+                            echo "Menunggu server siap... (Percobaan \$COUNT/\$RETRIES)"
+                            sleep 2
+                        done
+                    """
+
+                    sh """
+                        echo "🔎 Memastikan endpoint utama berjalan: GET /api/v1/stats"
+                        curl -sf http://localhost:${MAPPED_PORT}/api/v1/stats || (echo "❌ FATAL: Stats endpoint mati!"; exit 1)
+                        echo "✅ Post-deployment smoke test berhasil. Server VPS STABIL."
+                    """
                 }
             }
         }
