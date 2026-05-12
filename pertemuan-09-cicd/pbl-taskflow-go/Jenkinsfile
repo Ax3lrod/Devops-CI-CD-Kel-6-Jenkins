@@ -226,18 +226,16 @@ pipeline {
                 script {
                     echo "🚀 Deploying latest STABLE version to VPS..."
 
-                    def containerName = "taskflow-api"
-
-                    dir("${env.PROJECT_DIR}") {
-                        withCredentials([usernamePassword(credentialsId: 'dockerhub-fikri', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
-                            sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
-
-                            sh "docker compose pull"
-                            sh "docker compose down"    
-                            sh "docker compose up -d --force-recreate"
-
-                            sh "docker logout"
-                        }
+                    sshagent(credentials: ['vps-ssh']) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no kelompok6@10.4.89.175 '
+                                set -e
+                                cd /home/kelompok6/Devops-CI-CD-Kel-6-Jenkins/pertemuan-09-cicd/pbl-taskflow-go
+                                docker compose pull
+                                docker compose down
+                                docker compose up -d --force-recreate
+                            '
+                        """
                     }
 
                     echo "✅ Deployment selesai. Aplikasi berjalan di VPS dengan image stable terbaru."
