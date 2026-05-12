@@ -18,6 +18,8 @@ pipeline {
     stages {
         stage('1. Preparation') {
             steps {
+                // Memastikan Jenkins menarik branch/PR yang benar
+                checkout scm
                 // Mengatasi kendala izin direktori Git di lingkungan VPS
                 sh 'git config --global --add safe.directory "*"'
                 dir("${env.PROJECT_DIR}") {
@@ -105,6 +107,7 @@ pipeline {
         }
 
         stage('8. CD - Build & Push Docker Hub') {
+            when { branch 'main' }
             steps {
                 script {
                     // Membuat tag unik berdasarkan 7 digit pertama commit SHA
@@ -149,6 +152,7 @@ pipeline {
         }
         
         stage('9. Deploy to VPS') {
+            when { branch 'main' }
             steps {
                 script {
                     echo "🚀 Deploying SHA image to VPS..."
@@ -176,8 +180,9 @@ pipeline {
         }
 
         stage('10. Smoke Test') {
-        steps {
-            script {
+            when { branch 'main' }
+            steps {
+                script {
                 echo "🔍 Memulai Smoke Test otomatis untuk mencegah server mati sebelum Demo Investor..."
 
                 def MAPPED_PORT = "8080"
@@ -206,7 +211,8 @@ pipeline {
           }
         }
 
-        stage ('11. Promote to Stable') {
+        stage('11. Promote to Stable') {
+            when { branch 'main' }
             steps {
                 script {
                    def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
