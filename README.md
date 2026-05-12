@@ -60,4 +60,4 @@ docker compose -f jenkins-infra/docker-compose.yml up -d
 | `make up` | Jalankan Full Stack (App + Postgres). |
 
 ---
-**Status Project**: 🏗️ S2 In Progress | 🏁 S1 Completed.
+**Status Project**: 🏗️ S2 In Progress | 🏁 S1 Completed
