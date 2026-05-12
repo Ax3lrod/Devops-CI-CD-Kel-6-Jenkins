@@ -68,18 +68,18 @@ docker-stable:
 rollback:
 	@test -n "$(ROLLBACK_TAG)" || (echo "❌ Set ROLLBACK_TAG=sha-xxxxx"; exit 1)
 	@echo "→ Rolling back ke $(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG)"
+
 	docker pull $(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG)
-	docker stop taskflow-api 2>/dev/null || true
-	docker rm -f taskflow-api 2>/dev/null || true
-	docker run -d --rm \
-	  --name taskflow-api \
-	  -p 8080:8080 \
-	  -e DATABASE_URL=$(DB_URL) \
-	  $(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG)
+
+	export IMAGE_TAG=$(REGISTRY)/$(IMAGE):$(ROLLBACK_TAG) && \
+	docker compose up -d --force-recreate
+
 	@echo "⏳ Menunggu server siap..."
 	@sleep 5
-	curl -sf http://localhost:8080/health || (echo "❌ Health check gagal!"; exit 1)
-	@echo "✅ Rollback berhasil ke $(ROLLBACK_TAG)"
+
+	curl -sf http://$(HOST_IP):8080/health || (echo "❌ Health check gagal!"; exit 1)
+
+	@echo "✅ Rollback berhasil ke $(ROLLBACK_TAG)""
 
 ## Jalankan postgres saja (untuk development)
 db-up:
