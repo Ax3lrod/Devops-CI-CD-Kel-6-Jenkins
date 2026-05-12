@@ -13,6 +13,7 @@ RUN jenkins-plugin-cli --plugins \
     "docker-plugin" \
     "git" \
     "github" \
+    "github-branch-source" \
     "matrix-auth" \
     "workflow-aggregator" \
     "token-macro" \
