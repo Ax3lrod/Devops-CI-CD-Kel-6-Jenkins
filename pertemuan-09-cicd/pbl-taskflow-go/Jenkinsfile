@@ -127,7 +127,7 @@ pipeline {
                 sh """
                     docker run -d -P \\
                         --name taskflow-smoke-${commitSha} \\
-                        -e DATABASE_URL="postgres://taskflow:taskflow_secret@host.docker.internal:5432/taskflow?sslmode=disable" \\
+                        -e DATABASE_URL='${env.DATABASE_URL}' \\
                         --add-host host.docker.internal:host-gateway \\
                         ${env.DOCKER_IMAGE}:sha-${commitSha}
                 """
@@ -159,7 +159,7 @@ pipeline {
           }
         }
 
-        stage ('Promote to Stable') {
+        stage ('10. Promote to Stable') {
             steps {
                 script {
                    def commitSha = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
@@ -188,6 +188,37 @@ pipeline {
                      }
                     
                     echo "✅ Proses update stable selesai. Tag stable sekarang menunjuk ke versi: ${commitSha}"
+                }
+            }
+        }
+
+        stage('10. Deploy to VPS') {
+            steps {
+                script {
+                    echo "🚀 Deploying latest STABLE version to VPS..."
+
+                    def containerName = "taskflow-api"
+
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-fikri', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                        sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+
+                        sh "docker pull ${env.DOCKER_IMAGE}:stable"
+
+                        sh "docker rm -f ${containerName} || true"
+
+                        sh """
+                            docker run -d \
+                                --name ${containerName} \
+                                --restart always \
+                                -p 8080:8080 \
+                                -e DATABASE_URL='${env.DATABASE_URL}' \
+                                ${env.DOCKER_IMAGE}:stable
+                        """
+
+                        sh "docker logout"
+                    }
+
+                    echo "✅ Deployment selesai. Aplikasi berjalan di VPS dengan image stable terbaru."
                 }
             }
         }
